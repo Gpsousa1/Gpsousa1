@@ -59,8 +59,31 @@ async function main() {
     create: { userId: admin.id, roleId: adminRole.id },
   });
 
+  // ── FASE 2 catalogs (mirror INIT_MISSIONS and EDU_VIDEOS exactly) ──
+  const missions = [
+    { code: 1, title: 'Registre sua primeira receita', xp: 50, icon: '💰', cat: 'Finanças', recompensaCredito: 500 },
+    { code: 2, title: 'Organize seu fluxo de caixa', xp: 25, icon: '📊', cat: 'Finanças', recompensaCredito: 300 },
+    { code: 3, title: 'Declare a DASN em dia', xp: 100, icon: '📋', cat: 'Impostos', recompensaCredito: 1200 },
+    { code: 4, title: 'Pague seu primeiro DAS', xp: 75, icon: '✅', cat: 'Impostos', recompensaCredito: 800 },
+    { code: 5, title: 'Emita seu Certificado CCFV', xp: 80, icon: '🏆', cat: 'Certificados', recompensaCredito: 900 },
+    { code: 6, title: 'Emita sua primeira Nota Fiscal', xp: 60, icon: '📄', cat: 'Docs', recompensaCredito: 700 },
+  ];
+  for (const m of missions) {
+    await prisma.mission.upsert({ where: { code: m.code }, update: m, create: m });
+  }
+
+  const videos = [
+    { code: 'v1', titulo: 'Gestão de Fluxo de Caixa', dur: '18 min', xp: 20, cat: 'Finanças', emoji: '📊' },
+    { code: 'v2', titulo: 'DAS e DASN-SIMEI', dur: '22 min', xp: 25, cat: 'Impostos', emoji: '📋' },
+    { code: 'v3', titulo: 'Como Aumentar seu Score', dur: '14 min', xp: 20, cat: 'Score', emoji: '🎯' },
+    { code: 'v4', titulo: 'Nota Fiscal: Passo a Passo', dur: '20 min', xp: 20, cat: 'Docs', emoji: '📄' },
+  ];
+  for (const v of videos) {
+    await prisma.educationVideo.upsert({ where: { code: v.code }, update: v, create: v });
+  }
+
   // eslint-disable-next-line no-console
-  console.log(`Seed complete. Admin user: ${email}`);
+  console.log(`Seed complete. Admin: ${email}. Missions: ${missions.length}, Videos: ${videos.length}`);
 }
 
 main()

@@ -34,6 +34,26 @@ enum AuditLevel {
   CRITICAL
 }
 
+// ── FASE 2 enums ──
+enum ScoreTier {
+  BRONZE
+  PRATA
+  OURO
+  DIAMANTE
+}
+
+enum CertType {
+  CCFV
+  A1
+  OUTRO
+}
+
+enum CertStatus {
+  ATIVO
+  REVOGADO
+  EXPIRADO
+}
+
 model User {
   id           String         @id @default(uuid())
   email        String         @unique
@@ -131,4 +151,118 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// FASE 2 — Regras de negócio migradas do frontend (sem alteração
+// de fórmulas/pesos/missões/certificados).
+// ─────────────────────────────────────────────────────────────
+
+/// Acumuladores de gamificação por usuário (XP e bônus de crédito),
+/// equivalentes a user.xp / user.creditBonus do estado do frontend.
+model MeiGamification {
+  userId      String   @id
+  xp          Int      @default(0)
+  creditBonus Int      @default(0)
+  plano       String   @default("Gratuito")
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("mei_gamification")
+}
+
+/// Catálogo canônico de missões (espelha INIT_MISSIONS — 6 missões).
+model Mission {
+  code              Int      @id
+  title             String
+  xp                Int
+  icon              String
+  cat               String
+  recompensaCredito Int
+  progress          MissionProgress[]
+
+  @@map("missions")
+}
+
+model MissionProgress {
+  userId      String
+  missionCode Int
+  done        Boolean  @default(false)
+  doneAt      DateTime?
+  mission     Mission  @relation(fields: [missionCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, missionCode])
+  @@index([userId])
+  @@map("mission_progress")
+}
+
+/// Snapshot imutável do score calculado (histórico, máx. preservado pela app).
+model ScoreSnapshot {
+  id        String        @id @default(uuid())
+  userId    String
+  total     Int
+  tier      ScoreTier
+  raw       Float
+  version   String
+  motivo    String        @default("RECALCULO")
+  factors   ScoreFactor[]
+  createdAt DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@map("score_snapshots")
+}
+
+model ScoreFactor {
+  id           String        @id @default(uuid())
+  snapshotId   String
+  fator        String
+  valor        Int
+  contribuicao Float
+  snapshot     ScoreSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@map("score_factors")
+}
+
+/// Certificados emitidos. Hash SHA-256 gerado server-side (o frontend já
+/// espera active.hash via /api/v1/certificates/:id).
+model Certificate {
+  id        String     @id @default(uuid())
+  userId    String
+  tipo      CertType
+  status    CertStatus @default(ATIVO)
+  active    Boolean    @default(true)
+  validity  String?
+  valor     Float      @default(0)
+  hash      String     @unique
+  emitidoEm DateTime   @default(now())
+  expiraEm  DateTime?
+
+  @@index([userId])
+  @@index([tipo])
+  @@map("certificates")
+}
+
+/// Catálogo de vídeos de educação financeira (espelha EDU_VIDEOS — 4 vídeos).
+model EducationVideo {
+  code     String             @id
+  titulo   String
+  dur      String
+  xp       Int
+  cat      String
+  emoji    String
+  progress EducationProgress[]
+
+  @@map("education_videos")
+}
+
+model EducationProgress {
+  userId    String
+  videoCode String
+  watchedAt DateTime       @default(now())
+  video     EducationVideo @relation(fields: [videoCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, videoCode])
+  @@index([userId])
+  @@map("education_progress")
 }

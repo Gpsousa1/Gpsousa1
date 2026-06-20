@@ -10,7 +10,12 @@ import { PrismaModule } from './infra/prisma/prisma.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CertificatesModule } from './modules/certificates/certificates.module';
+import { EducationModule } from './modules/education/education.module';
+import { GamificationModule } from './modules/gamification/gamification.module';
 import { HealthModule } from './modules/health/health.module';
+import { MissionsModule } from './modules/missions/missions.module';
+import { ScoreModule } from './modules/score/score.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -37,6 +42,12 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     HealthModule,
+    // FASE 2 — regras de negócio migradas do frontend
+    GamificationModule,
+    ScoreModule,
+    MissionsModule,
+    CertificatesModule,
+    EducationModule,
   ],
   providers: [
     // Authentication is enforced globally; opt out with @Public().
