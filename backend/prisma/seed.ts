@@ -82,8 +82,33 @@ async function main() {
     await prisma.educationVideo.upsert({ where: { code: v.code }, update: v, create: v });
   }
 
+  // ── FASE 3: fraud rules (mirror FraudEngine points) ──
+  const fraudRules = [
+    { code: 'FAT_ALTO', descricao: 'Faturamento > 80% do teto MEI', pontos: 20 },
+    { code: 'MULTIPLAS_SOLICITACOES', descricao: 'Mais de 1 operação em análise', pontos: 30 },
+    { code: 'VELOCITY_ALTA', descricao: 'Mais de 10 transações em 24h', pontos: 25 },
+    { code: 'ROUND_NUMBERS', descricao: '>=50% das transações com valores redondos >= R$5k', pontos: 15 },
+    { code: 'MICRO_FARMING', descricao: '>=10 receitas < R$50 nas últimas 20', pontos: 20 },
+  ];
+  for (const r of fraudRules) {
+    await prisma.fraudRule.upsert({ where: { code: r.code }, update: r, create: r });
+  }
+
+  // ── FASE 3: ledger chart of accounts (mínimo para o release de crédito) ──
+  const accounts = [
+    { code: '1.1.1', name: 'Caixa', type: 'ASSET' },
+    { code: '1.1.2', name: 'Crédito Concedido', type: 'ASSET' },
+    { code: '2.1.1', name: 'Obrigações a Pagar', type: 'LIABILITY' },
+    { code: '3.1.1', name: 'Receita de Comissões', type: 'REVENUE' },
+  ];
+  for (const a of accounts) {
+    await prisma.ledgerAccount.upsert({ where: { code: a.code }, update: a, create: a });
+  }
+
   // eslint-disable-next-line no-console
-  console.log(`Seed complete. Admin: ${email}. Missions: ${missions.length}, Videos: ${videos.length}`);
+  console.log(
+    `Seed complete. Admin: ${email}. Missions: ${missions.length}, Videos: ${videos.length}, FraudRules: ${fraudRules.length}, LedgerAccounts: ${accounts.length}`,
+  );
 }
 
 main()

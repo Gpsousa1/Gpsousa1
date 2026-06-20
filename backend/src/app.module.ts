@@ -17,6 +17,13 @@ import { HealthModule } from './modules/health/health.module';
 import { MissionsModule } from './modules/missions/missions.module';
 import { ScoreModule } from './modules/score/score.module';
 import { UsersModule } from './modules/users/users.module';
+// FASE 3 — núcleo financeiro
+import { AdvisorModule } from './modules/advisor/advisor.module';
+import { CreditModule } from './modules/credit/credit.module';
+import { FraudModule } from './modules/fraud/fraud.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { OpenFinanceModule } from './modules/open-finance/open-finance.module';
+import { PixModule } from './modules/pix/pix.module';
 
 @Module({
   imports: [
@@ -48,6 +55,13 @@ import { UsersModule } from './modules/users/users.module';
     MissionsModule,
     CertificatesModule,
     EducationModule,
+    // FASE 3 — núcleo financeiro
+    FraudModule,
+    LedgerModule,
+    CreditModule,
+    OpenFinanceModule,
+    PixModule,
+    AdvisorModule,
   ],
   providers: [
     // Authentication is enforced globally; opt out with @Public().
