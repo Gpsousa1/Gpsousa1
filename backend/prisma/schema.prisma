@@ -1,0 +1,134 @@
+// ─────────────────────────────────────────────────────────────
+// Lucrom Backend — FASE 1 (Foundation)
+// Scope: Identity & Access (IAM), RBAC, Refresh Tokens, Audit.
+// NOTE: Business domains (Score, Credit, Fraud, Missions, Certificates)
+// are intentionally OUT OF SCOPE for FASE 1 and are not modelled here.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+/// Role names mirror the three profiles audited in the MVP (MEI / Partner / Admin).
+enum RoleName {
+  MEI
+  PARTNER
+  ADMIN
+}
+
+enum AuditLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  displayName  String?
+  status       UserStatus     @default(ACTIVE)
+  roles        UserRole[]
+  refreshTokens RefreshToken[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        RoleName         @unique
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@map("roles")
+}
+
+/// A permission is an (action, resource) pair, e.g. action="approve" resource="credit".
+model Permission {
+  id          String           @id @default(uuid())
+  action      String
+  resource    String
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@unique([action, resource])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Opaque refresh tokens are stored hashed and grouped into a rotation "family".
+/// Re-use of a revoked token revokes the whole family (theft detection).
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  familyId  String
+  tokenHash String   @unique
+  revoked   Boolean  @default(false)
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// Append-only audit trail. Rows are never updated or deleted by the app.
+model AuditLog {
+  id        String     @id @default(uuid())
+  actorId   String?
+  action    String
+  resource  String
+  level     AuditLevel @default(INFO)
+  ip        String?
+  userAgent String?
+  meta      Json?
+  createdAt DateTime   @default(now())
+  actor     User?      @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

@@ -18,3 +18,11 @@
 - `typescript` was added to devDependencies so the `typecheck` script works (the original relied on the monorepo root).
 - `index.html` references `/favicon.svg`, which is not included; the resulting 404 is harmless.
 - The app loads FingerprintJS from a remote CDN at runtime; it fails open (no network = no crash).
+
+### Backend (`backend/`) — FASE 1 foundation
+- `backend/` is a standalone **NestJS 10 + Prisma 5 + PostgreSQL + Redis** project implementing only the FASE 1 foundation of the production blueprint: IAM, RBAC, JWT + refresh-token rotation, audit trail and structured logs. It contains **no business rules** (Score/Credit/Fraud/Missions/Certificates are out of scope) and does not import or modify `lucrom/`.
+- Requires PostgreSQL and Redis. They are NOT preinstalled on a fresh VM. One-off setup: `sudo apt-get install -y postgresql redis-server`, then `sudo service postgresql start && sudo service redis-server start`. Create the DB role/database used by `DATABASE_URL` (default `lucrom:lucrom@localhost:5432/lucrom`): `sudo -u postgres psql -c "CREATE ROLE lucrom LOGIN PASSWORD 'lucrom' CREATEDB;" && sudo -u postgres createdb -O lucrom lucrom`.
+- First run (from `backend/`): `cp .env.example .env`, `npm install`, `npm run prisma:migrate`, `npm run prisma:seed`, then `npm run build && node dist/main.js` (or `npm run dev`). Seed creates roles + an admin user `admin@lucrom.local` / `ChangeMe123!`.
+- Env is strictly validated at boot (`src/config/env.validation.ts`): the app refuses to start if `DATABASE_URL`, `REDIS_URL` or JWT secrets are missing/invalid. Postgres/Redis being down does NOT crash boot — `GET /api/v1/health` still responds with `degraded`.
+- API is prefixed and versioned: routes live under `/api/v1/*`. Auth is enforced globally (`JwtAuthGuard`); opt out per-route with `@Public()`.
+- `@prisma/client` auto-generates on `npm install` (postinstall). After editing `prisma/schema.prisma`, run `npm run prisma:migrate`.
