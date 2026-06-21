@@ -1,0 +1,586 @@
+// ─────────────────────────────────────────────────────────────
+// Lucrom Backend — FASE 1 (Foundation)
+// Scope: Identity & Access (IAM), RBAC, Refresh Tokens, Audit.
+// NOTE: Business domains (Score, Credit, Fraud, Missions, Certificates)
+// are intentionally OUT OF SCOPE for FASE 1 and are not modelled here.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+/// Role names mirror the three profiles audited in the MVP (MEI / Partner / Admin).
+enum RoleName {
+  MEI
+  PARTNER
+  ADMIN
+}
+
+enum AuditLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// ── FASE 2 enums ──
+enum ScoreTier {
+  BRONZE
+  PRATA
+  OURO
+  DIAMANTE
+}
+
+enum CertType {
+  CCFV
+  A1
+  OUTRO
+}
+
+enum CertStatus {
+  ATIVO
+  REVOGADO
+  EXPIRADO
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  displayName  String?
+  status       UserStatus     @default(ACTIVE)
+  roles        UserRole[]
+  refreshTokens RefreshToken[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        RoleName         @unique
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@map("roles")
+}
+
+/// A permission is an (action, resource) pair, e.g. action="approve" resource="credit".
+model Permission {
+  id          String           @id @default(uuid())
+  action      String
+  resource    String
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+
+  @@unique([action, resource])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Opaque refresh tokens are stored hashed and grouped into a rotation "family".
+/// Re-use of a revoked token revokes the whole family (theft detection).
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  familyId  String
+  tokenHash String   @unique
+  revoked   Boolean  @default(false)
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// Append-only audit trail. Rows are never updated or deleted by the app.
+model AuditLog {
+  id        String     @id @default(uuid())
+  actorId   String?
+  action    String
+  resource  String
+  level     AuditLevel @default(INFO)
+  ip        String?
+  userAgent String?
+  meta      Json?
+  createdAt DateTime   @default(now())
+  actor     User?      @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// FASE 2 — Regras de negócio migradas do frontend (sem alteração
+// de fórmulas/pesos/missões/certificados).
+// ─────────────────────────────────────────────────────────────
+
+/// Acumuladores de gamificação por usuário (XP e bônus de crédito),
+/// equivalentes a user.xp / user.creditBonus do estado do frontend.
+model MeiGamification {
+  userId      String   @id
+  xp          Int      @default(0)
+  creditBonus Int      @default(0)
+  plano       String   @default("Gratuito")
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("mei_gamification")
+}
+
+/// Catálogo canônico de missões (espelha INIT_MISSIONS — 6 missões).
+model Mission {
+  code              Int      @id
+  title             String
+  xp                Int
+  icon              String
+  cat               String
+  recompensaCredito Int
+  progress          MissionProgress[]
+
+  @@map("missions")
+}
+
+model MissionProgress {
+  userId      String
+  missionCode Int
+  done        Boolean  @default(false)
+  doneAt      DateTime?
+  mission     Mission  @relation(fields: [missionCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, missionCode])
+  @@index([userId])
+  @@map("mission_progress")
+}
+
+/// Snapshot imutável do score calculado (histórico, máx. preservado pela app).
+model ScoreSnapshot {
+  id        String        @id @default(uuid())
+  userId    String
+  total     Int
+  tier      ScoreTier
+  raw       Float
+  version   String
+  motivo    String        @default("RECALCULO")
+  factors   ScoreFactor[]
+  createdAt DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@map("score_snapshots")
+}
+
+model ScoreFactor {
+  id           String        @id @default(uuid())
+  snapshotId   String
+  fator        String
+  valor        Int
+  contribuicao Float
+  snapshot     ScoreSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@map("score_factors")
+}
+
+/// Certificados emitidos. Hash SHA-256 gerado server-side (o frontend já
+/// espera active.hash via /api/v1/certificates/:id).
+model Certificate {
+  id        String     @id @default(uuid())
+  userId    String
+  tipo      CertType
+  status    CertStatus @default(ATIVO)
+  active    Boolean    @default(true)
+  validity  String?
+  valor     Float      @default(0)
+  hash      String     @unique
+  emitidoEm DateTime   @default(now())
+  expiraEm  DateTime?
+
+  @@index([userId])
+  @@index([tipo])
+  @@map("certificates")
+}
+
+/// Catálogo de vídeos de educação financeira (espelha EDU_VIDEOS — 4 vídeos).
+model EducationVideo {
+  code     String             @id
+  titulo   String
+  dur      String
+  xp       Int
+  cat      String
+  emoji    String
+  progress EducationProgress[]
+
+  @@map("education_videos")
+}
+
+model EducationProgress {
+  userId    String
+  videoCode String
+  watchedAt DateTime       @default(now())
+  video     EducationVideo @relation(fields: [videoCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, videoCode])
+  @@index([userId])
+  @@map("education_progress")
+}
+
+// ─────────────────────────────────────────────────────────────
+// FASE 3 — Núcleo financeiro (Credit, Fraud, Ledger, Open Finance,
+// PIX, Advisor IA). Aditivo; não altera FASE 1/2.
+// ─────────────────────────────────────────────────────────────
+
+enum CreditStatus {
+  SOLICITADA
+  EM_ANALISE
+  APROVADA
+  REPROVADA
+  LIBERADA
+  CANCELADA
+}
+
+enum CreditDecisionType {
+  PRE_ANALISE
+  APROVACAO
+  REPROVACAO
+}
+
+enum InstallmentStatus {
+  PENDENTE
+  PAGA
+}
+
+enum FraudNivel {
+  BAIXO
+  MEDIO
+  ALTO
+  CRITICO
+}
+
+enum LedgerEntryType {
+  DEBITO
+  CREDITO
+}
+
+enum ConsentStatus {
+  PENDING
+  AUTHORIZED
+  REVOKED
+  EXPIRED
+}
+
+enum PixChargeStatus {
+  ATIVA
+  CONCLUIDA
+  EXPIRADA
+  REMOVIDA
+}
+
+enum PixTransferStatus {
+  PENDENTE
+  LIQUIDADA
+  FALHOU
+}
+
+enum AdvisorKind {
+  ANALYSIS
+  RECOMMENDATION
+  EDUCATION
+  CREDIT_GUIDANCE
+  SCORE_INTERPRETATION
+}
+
+// ── Credit Engine ──
+model CreditApplication {
+  id                    String           @id @default(uuid())
+  userId                String
+  valor                 Float
+  parcelas              Int
+  finalidade            String           @default("Capital de giro")
+  scoreNaMidia          Int?
+  taxaEstimada          Float?
+  valorParcelaEstimada  Float?
+  iofEstimado           Float?
+  fraudScore            Int?
+  fraudFlags            Json?
+  status                CreditStatus     @default(SOLICITADA)
+  decisions             CreditDecision[]
+  contract              CreditContract?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("credit_applications")
+}
+
+model CreditDecision {
+  id            String             @id @default(uuid())
+  applicationId String
+  tipo          CreditDecisionType
+  aprovado      Boolean
+  taxaJuros     Float?
+  motivo        String?
+  actorId       String?
+  createdAt     DateTime           @default(now())
+  application   CreditApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("credit_decisions")
+}
+
+model CreditContract {
+  id             String            @id @default(uuid())
+  applicationId  String            @unique
+  valorPrincipal Float
+  taxaJuros      Float
+  parcelas       Int
+  valorParcela   Float
+  valorTotal     Float
+  iof            Float
+  cet            Float
+  comissao       Float             @default(0)
+  liberadaEm     DateTime?
+  ledgerTxId     String?
+  installments   Installment[]
+  createdAt      DateTime          @default(now())
+  application    CreditApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("credit_contracts")
+}
+
+model Installment {
+  id          String            @id @default(uuid())
+  contractId  String
+  numero      Int
+  valor       Float
+  juros       Float
+  amortizacao Float
+  saldo       Float
+  vencimento  DateTime
+  status      InstallmentStatus @default(PENDENTE)
+  paidAt      DateTime?
+  contract    CreditContract    @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@map("installments")
+}
+
+// ── Fraud Engine ──
+model FraudRule {
+  code      String   @id
+  descricao String
+  pontos    Int
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("fraud_rules")
+}
+
+model FraudEvent {
+  id            String     @id @default(uuid())
+  userId        String?
+  applicationId String?
+  riskScore     Int
+  nivel         FraudNivel
+  flags         Json
+  bloqueado     Boolean
+  alerta        Boolean
+  deviceId      String?
+  ip            String?
+  userAgent     String?
+  context       Json?
+  createdAt     DateTime   @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("fraud_events")
+}
+
+model FraudScore {
+  id        String     @id @default(uuid())
+  userId    String
+  riskScore Int
+  nivel     FraudNivel
+  flags     Json
+  createdAt DateTime   @default(now())
+
+  @@index([userId, createdAt])
+  @@map("fraud_scores")
+}
+
+model FraudBlacklist {
+  id        String   @id @default(uuid())
+  tipo      String // CPF | CNPJ | DEVICE | EMAIL | IP
+  valor     String
+  motivo    String?
+  createdAt DateTime @default(now())
+
+  @@unique([tipo, valor])
+  @@map("fraud_blacklist")
+}
+
+// ── Ledger Engine (double-entry) ──
+model LedgerAccount {
+  code      String        @id
+  name      String
+  type      String // ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE
+  entries   LedgerEntry[]
+  createdAt DateTime      @default(now())
+
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id         String        @id @default(uuid())
+  reference  String?
+  descricao  String
+  balanced   Boolean       @default(true)
+  reconciled Boolean       @default(false)
+  entries    LedgerEntry[]
+  createdAt  DateTime      @default(now())
+
+  @@index([reference])
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id            String            @id @default(uuid())
+  transactionId String
+  accountCode   String
+  tipo          LedgerEntryType
+  valor         Float
+  descricao     String?
+  createdAt     DateTime          @default(now())
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account       LedgerAccount     @relation(fields: [accountCode], references: [code])
+
+  @@index([transactionId])
+  @@index([accountCode])
+  @@map("ledger_entries")
+}
+
+// ── Open Finance (integration layer; no provider yet) ──
+model OfConsent {
+  id                String          @id @default(uuid())
+  userId            String
+  provider          String
+  scopes            Json
+  status            ConsentStatus   @default(PENDING)
+  externalConsentId String?
+  expiresAt         DateTime?
+  syncs             OfAccountSync[]
+  createdAt         DateTime        @default(now())
+
+  @@index([userId])
+  @@map("of_consents")
+}
+
+model OfAccountSync {
+  id         String    @id @default(uuid())
+  consentId  String
+  accountRef String
+  status     String    @default("PENDING")
+  lastSyncAt DateTime?
+  payload    Json?
+  createdAt  DateTime  @default(now())
+  consent    OfConsent @relation(fields: [consentId], references: [id], onDelete: Cascade)
+
+  @@index([consentId])
+  @@map("of_account_syncs")
+}
+
+// ── PIX (integration layer; no PSP yet) ──
+model PixCharge {
+  id        String          @id @default(uuid())
+  userId    String
+  txid      String          @unique
+  valor     Float
+  status    PixChargeStatus @default(ATIVA)
+  brcode    String?
+  e2eId     String?
+  expiresAt DateTime?
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+  @@map("pix_charges")
+}
+
+model PixTransfer {
+  id        String            @id @default(uuid())
+  userId    String
+  valor     Float
+  pixKey    String
+  status    PixTransferStatus @default(PENDENTE)
+  e2eId     String?
+  createdAt DateTime          @default(now())
+
+  @@index([userId])
+  @@map("pix_transfers")
+}
+
+model PixWebhook {
+  id         String   @id @default(uuid())
+  provider   String
+  event      String
+  payload    Json
+  processed  Boolean  @default(false)
+  receivedAt DateTime @default(now())
+
+  @@map("pix_webhooks")
+}
+
+// ── Advisor IA ──
+model AdvisorInteraction {
+  id        String      @id @default(uuid())
+  userId    String
+  kind      AdvisorKind
+  input     Json?
+  response  Json
+  createdAt DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@map("advisor_interactions")
+}
