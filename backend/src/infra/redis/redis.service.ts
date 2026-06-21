@@ -51,4 +51,57 @@ export class RedisService implements OnModuleDestroy {
     }
     return count;
   }
+
+  // ── Generic JSON cache (score/fraud caches, etc.) ──
+  async getJson<T>(key: string): Promise<T | null> {
+    try {
+      const raw = await this.client.get(key);
+      return raw ? (JSON.parse(raw) as T) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    try {
+      await this.client.set(key, JSON.stringify(value), 'EX', Math.max(ttlSeconds, 1));
+    } catch {
+      // cache is best-effort; never break the request on cache failure
+    }
+  }
+
+  async del(key: string): Promise<void> {
+    try {
+      await this.client.del(key);
+    } catch {
+      // best-effort
+    }
+  }
+
+  // ── Idempotency primitives ──
+  /** Atomically claims an idempotency key. Returns true if this caller won the claim. */
+  async claimIdempotency(key: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      const res = await this.client.set(key, 'PROCESSING', 'EX', Math.max(ttlSeconds, 1), 'NX');
+      return res === 'OK';
+    } catch {
+      // Redis down → fail-open (let the request proceed without idempotency).
+      return true;
+    }
+  }
+
+  async getIdempotentResult<T>(key: string): Promise<{ status: number; body: T } | 'PROCESSING' | null> {
+    try {
+      const raw = await this.client.get(key);
+      if (!raw) return null;
+      if (raw === 'PROCESSING') return 'PROCESSING';
+      return JSON.parse(raw) as { status: number; body: T };
+    } catch {
+      return null;
+    }
+  }
+
+  async storeIdempotentResult(key: string, status: number, body: unknown, ttlSeconds: number): Promise<void> {
+    await this.setJson(key, { status, body }, ttlSeconds);
+  }
 }

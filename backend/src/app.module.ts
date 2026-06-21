@@ -4,6 +4,8 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AuditInterceptor } from './common/audit/audit.interceptor';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
+import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor';
+import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './infra/prisma/prisma.module';
@@ -64,8 +66,12 @@ import { PixModule } from './modules/pix/pix.module';
     AdvisorModule,
   ],
   providers: [
-    // Authentication is enforced globally; opt out with @Public().
+    // Guards run in order: rate limit first (cheap, protects auth), then auth.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Interceptors: idempotency wraps the handler (may short-circuit before
+    // audit on replay); audit records executed requests.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })

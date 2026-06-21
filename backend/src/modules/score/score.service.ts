@@ -1,11 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { RedisService } from '../../infra/redis/redis.service';
 import { CalculateScoreDto } from './dto/score.dto';
 import { calcScore, nivel, risk, ScoreResult } from './score.engine';
 
+const SCORE_CACHE_TTL = 60; // seconds
+
 @Injectable()
 export class ScoreService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
+
+  private cacheKey(userId: string) {
+    return `score:me:${userId}`;
+  }
 
   /** Pure, stateless calculation — exact replica of the frontend engine. */
   calculate(dto: CalculateScoreDto) {
@@ -53,10 +63,15 @@ export class ScoreService {
       },
       include: { factors: true },
     });
+    // New snapshot invalidates the cached "me" view.
+    await this.redis.del(this.cacheKey(userId));
     return { ...calc, snapshotId: snapshot.id, createdAt: snapshot.createdAt };
   }
 
   async me(userId: string) {
+    const cached = await this.redis.getJson<object>(this.cacheKey(userId));
+    if (cached) return cached;
+
     const latest = await this.prisma.scoreSnapshot.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -65,6 +80,7 @@ export class ScoreService {
     if (!latest) {
       throw new NotFoundException('No score snapshot yet for this user');
     }
+    await this.redis.setJson(this.cacheKey(userId), latest, SCORE_CACHE_TTL);
     return latest;
   }
 

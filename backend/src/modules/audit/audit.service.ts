@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuditLevel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import {
+  buildPage,
+  DEFAULT_PAGE,
+  parseCursorArgs,
+  prismaCursor,
+} from '../../common/pagination/cursor';
 
 export interface AuditEvent {
   actorId?: string | null;
@@ -40,14 +46,13 @@ export class AuditService {
     }
   }
 
-  async list(params: { action?: string; level?: AuditLevel; take?: number }) {
-    return this.prisma.auditLog.findMany({
-      where: {
-        action: params.action,
-        level: params.level,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(params.take ?? 50, 200),
+  async list(params: { action?: string; level?: AuditLevel; cursor?: string; take?: string }) {
+    const args = parseCursorArgs(params.cursor, params.take);
+    const rows = await this.prisma.auditLog.findMany({
+      where: { action: params.action, level: params.level },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...prismaCursor(args),
     });
+    return buildPage(rows, args.limit ?? DEFAULT_PAGE);
   }
 }

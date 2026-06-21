@@ -21,12 +21,9 @@ export class AuditController {
   list(
     @Query('action') action?: string,
     @Query('level') level?: AuditLevel,
+    @Query('cursor') cursor?: string,
     @Query('take') take?: string,
   ) {
-    return this.audit.list({
-      action,
-      level,
-      take: take ? parseInt(take, 10) : undefined,
-    });
+    return this.audit.list({ action, level, cursor, take });
   }
 }

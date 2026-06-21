@@ -9,6 +9,7 @@ import {
 import { Request } from 'express';
 import { Audit } from '../../common/audit/audit.decorator';
 import { Public } from '../../common/auth/public.decorator';
+import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto, RegisterDto } from './dto/auth.dto';
 
@@ -25,6 +26,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @RateLimit(10, 60)
   @Audit('register', 'auth')
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
@@ -32,6 +34,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
   @Audit('login', 'auth')
   login(@Body() dto: LoginDto, @Req() req: Request) {

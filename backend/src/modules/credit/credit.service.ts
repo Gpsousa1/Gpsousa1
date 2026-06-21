@@ -17,6 +17,12 @@ import {
   SimulateCreditDto,
 } from './dto/credit.dto';
 import { calcCET, calcIOF, calcPMT, tabelaAmortizacao } from './price-table';
+import {
+  buildPage,
+  CursorArgs,
+  DEFAULT_PAGE,
+  prismaCursor,
+} from '../../common/pagination/cursor';
 
 // Ledger accounts used by credit release (seeded in prisma/seed.ts).
 const ACC_CREDITO_CONCEDIDO = '1.1.2';
@@ -243,12 +249,14 @@ export class CreditService {
     return app;
   }
 
-  list(userId: string, isPrivileged: boolean) {
-    return this.prisma.creditApplication.findMany({
+  async list(userId: string, isPrivileged: boolean, args: CursorArgs) {
+    const rows = await this.prisma.creditApplication.findMany({
       where: isPrivileged ? undefined : { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: { decisions: true, contract: true },
+      ...prismaCursor(args),
     });
+    return buildPage(rows, args.limit ?? DEFAULT_PAGE);
   }
 
   async get(id: string) {

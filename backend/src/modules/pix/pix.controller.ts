@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { Audit } from '../../common/audit/audit.decorator';
+import { Idempotent } from '../../common/idempotency/idempotency.decorator';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { Public } from '../../common/auth/public.decorator';
 import { PixService } from './pix.service';
@@ -37,6 +38,7 @@ export class PixController {
   constructor(private readonly pix: PixService) {}
 
   @Post('charges')
+  @Idempotent()
   @Audit('pix.charge.create', 'pix')
   createCharge(@CurrentUser('id') userId: string, @Body() dto: CreateChargeDto) {
     return this.pix.createCharge(userId, dto.valor);
@@ -53,6 +55,7 @@ export class PixController {
   }
 
   @Post('transfers')
+  @Idempotent()
   @Audit('pix.transfer.create', 'pix')
   createTransfer(@CurrentUser('id') userId: string, @Body() dto: CreateTransferDto) {
     return this.pix.createTransfer(userId, dto.valor, dto.pixKey);

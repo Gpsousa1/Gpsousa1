@@ -13,10 +13,12 @@ import {
 import { RoleName } from '@prisma/client';
 import { Request } from 'express';
 import { Audit } from '../../common/audit/audit.decorator';
+import { Idempotent } from '../../common/idempotency/idempotency.decorator';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { AuthenticatedUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
+import { parseCursorArgs } from '../../common/pagination/cursor';
 import {
   ApproveCreditDto,
   RejectCreditDto,
@@ -49,6 +51,7 @@ export class CreditController {
   }
 
   @Post('applications')
+  @Idempotent()
   @Audit('credit.request', 'credit')
   request(@CurrentUser('id') userId: string, @Body() dto: RequestCreditDto, @Req() req: Request) {
     return this.credit.request(userId, dto, {
@@ -58,9 +61,13 @@ export class CreditController {
   }
 
   @Get('applications')
-  list(@CurrentUser() user: AuthenticatedUser) {
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('cursor') cursor?: string,
+    @Query('take') take?: string,
+  ) {
     const privileged = user.roles.includes(RoleName.ADMIN) || user.roles.includes(RoleName.PARTNER);
-    return this.credit.list(user.id, privileged);
+    return this.credit.list(user.id, privileged, parseCursorArgs(cursor, take));
   }
 
   @Get('applications/:id')
@@ -95,6 +102,7 @@ export class CreditController {
   @Post('applications/:id/release')
   @UseGuards(RolesGuard)
   @Roles(RoleName.PARTNER, RoleName.ADMIN)
+  @Idempotent()
   @Audit('credit.release', 'credit')
   release(@Param('id') id: string) {
     return this.credit.release(id);
