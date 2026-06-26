@@ -105,9 +105,21 @@ async function main() {
     await prisma.ledgerAccount.upsert({ where: { code: a.code }, update: a, create: a });
   }
 
+  // ── CCFV v2: active (heuristic) scoring model version ──
+  await prisma.scoreModelVersion.upsert({
+    where: { version: 'heuristic-1.0' },
+    update: { ativo: true },
+    create: {
+      version: 'heuristic-1.0',
+      tipo: 'HEURISTIC',
+      ativo: true,
+      descricao: 'Placeholder heurístico (não calibrado). Substituir por scorecard PD validado.',
+    },
+  });
+
   // eslint-disable-next-line no-console
   console.log(
-    `Seed complete. Admin: ${email}. Missions: ${missions.length}, Videos: ${videos.length}, FraudRules: ${fraudRules.length}, LedgerAccounts: ${accounts.length}`,
+    `Seed complete. Admin: ${email}. Missions: ${missions.length}, Videos: ${videos.length}, FraudRules: ${fraudRules.length}, LedgerAccounts: ${accounts.length}, ScoreModel: heuristic-1.0`,
   );
 }
 

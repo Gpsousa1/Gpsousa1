@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────
+# Lucrom — production stack (clone-and-run na VPS)
+#   PgBouncer (pooling) + PostgreSQL + Redis + API (multi-réplica) + Nginx
+# Uso:
+#   cp .env.prod.example .env   # e preencha com segredos fortes
+#   docker compose up -d --build
+#   docker compose exec api npx prisma db seed   # 1x (roles/admin/catálogos)
+# ─────────────────────────────────────────────────────────────
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER:-lucrom}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-lucrom}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-lucrom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: db
+      DB_USER: ${DB_USER:-lucrom}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-lucrom}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "25"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redisdata:/data"]
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Conecta via PgBouncer (pooling) — escala horizontal sem esgotar conexões.
+      DATABASE_URL: postgresql://${DB_USER:-lucrom}:${DB_PASSWORD}@pgbouncer:5432/${DB_NAME:-lucrom}?schema=public&pgbouncer=true
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: 900s
+      JWT_REFRESH_TTL: 7d
+      BCRYPT_ROUNDS: 12
+    depends_on: [pgbouncer, redis]
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    expose: ["3000"]
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["80:80"]
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
