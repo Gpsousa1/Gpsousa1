@@ -26,6 +26,7 @@ import { FraudModule } from './modules/fraud/fraud.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { OpenFinanceModule } from './modules/open-finance/open-finance.module';
 import { PixModule } from './modules/pix/pix.module';
+import { CreditScoringModule } from './modules/credit-scoring/credit-scoring.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { PixModule } from './modules/pix/pix.module';
     OpenFinanceModule,
     PixModule,
     AdvisorModule,
+    CreditScoringModule,
   ],
   providers: [
     // Guards run in order: rate limit first (cheap, protects auth), then auth.

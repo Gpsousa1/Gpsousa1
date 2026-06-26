@@ -584,3 +584,82 @@ model AdvisorInteraction {
   @@index([userId, createdAt])
   @@map("advisor_interactions")
 }
+
+// ─────────────────────────────────────────────────────────────
+// CCFV v2 — Certificado "bank-grade" (atestação consumível por banco):
+// identidade + cash-flow verificado + score comportamental + faixa de PD.
+// Camada de scoring versionada (substituível por modelo calibrado por
+// especialista) e conectores de bureau/SCR (integração, sem fornecedor real).
+// Aditivo; não altera o CCFV simples (model Certificate) das fases anteriores.
+// ─────────────────────────────────────────────────────────────
+
+enum AttestationStatus {
+  ATIVA
+  EXPIRADA
+  REVOGADA
+}
+
+enum ScoreModelType {
+  HEURISTIC
+  SCORECARD
+  GBM
+}
+
+/// Registro de versões do modelo de score (governança / troca sem mexer na API).
+model ScoreModelVersion {
+  id        String         @id @default(uuid())
+  version   String         @unique
+  tipo      ScoreModelType
+  ativo     Boolean        @default(false)
+  descricao String?
+  createdAt DateTime       @default(now())
+
+  @@map("score_model_versions")
+}
+
+/// Atestação de crédito (CCFV v2) — assinada (SHA-256) e verificável por API.
+model CreditAttestation {
+  id             String            @id @default(uuid())
+  userId         String
+  modelVersion   String
+  score          Int
+  pd             Float // probabilidade de default (0..1) — HEURÍSTICA até calibração
+  rating         String
+  cashflow       Json // resumo de features de fluxo de caixa
+  bureauStatus   String // NOT_CONNECTED | CLEAN | NEGATIVE
+  identityStatus String // PENDING | VERIFIED
+  hash           String            @unique
+  status         AttestationStatus @default(ATIVA)
+  emitidoEm      DateTime          @default(now())
+  expiraEm       DateTime
+
+  @@index([userId])
+  @@map("credit_attestations")
+}
+
+/// Consultas a bureau / SCR (camada de integração; sem fornecedor real ainda).
+model BureauQuery {
+  id        String   @id @default(uuid())
+  userId    String
+  provider  String
+  documento String
+  status    String // NOT_CONNECTED | OK
+  resultado Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("bureau_queries")
+}
+
+/// Loop de outcome — registra pagamento/inadimplência real para re-treino futuro.
+model CreditOutcome {
+  id            String   @id @default(uuid())
+  userId        String
+  applicationId String?
+  evento        String // PAGAMENTO | INADIMPLENCIA | QUITACAO
+  valor         Float?
+  ocorridoEm    DateTime @default(now())
+
+  @@index([userId])
+  @@map("credit_outcomes")
+}
